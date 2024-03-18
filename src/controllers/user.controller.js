@@ -19,7 +19,7 @@ const registerUser = asyncHandler(async (req, res) => {
 	}
 
 	// Checking for existing user
-	const existedUser = User.findOne({
+	const existedUser = await User.findOne({
 		$or: [{ username }, { email }],
 	});
 
@@ -33,7 +33,16 @@ const registerUser = asyncHandler(async (req, res) => {
 
 	// Getting the path or files / images
 	const avatarLocalPath = req.files?.avatar[0]?.path;
-	const coverImageLocalPath = req.files?.avatar[0]?.path;
+
+	// Checks for coverImage
+	let coverImageLocalPath;
+	if (
+		req.files &&
+		Array.isArray(req.files.coverImage) &&
+		req.files.coverImage.length > 0
+	) {
+		coverImageLocalPath = req.files.coverImage[0].path;
+	}
 
 	// Avatar image is compulsory so if not found throwing error
 	if (!avatarLocalPath) {
