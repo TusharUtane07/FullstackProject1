@@ -4,10 +4,33 @@ import { User } from "../models/user.model.js";
 import { uploadToCloudinary } from "../utils/Cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 
+// creating method for generating access and refresh tokens
+const generateAccessAndRefreshTokens = async (userId) => {
+	try {
+		// finding user with id
+		const user = await User.findById(userId);
+		// running function for generating access token that is created in user model
+		const accessToken = user.generateAccessToken();
+		// running function for generating refresh token that is created in user model
+		const refreshToken = user.generateRefreshToken();
+
+		// saving refresh token in database
+		user.refreshToken = refreshToken;
+		await user.save({ validateBeforeSave: false });
+
+		// returning both access and refresh token for after use
+		return { accessToken, refreshToken };
+	} catch (error) {
+		throw new ApiError(
+			500,
+			"Something went wrong, while generating refresh and access tokens"
+		);
+	}
+};
+
 const registerUser = asyncHandler(async (req, res) => {
 	// Getting data from client side
 	const { fullname, username, email, password } = req.body;
-	console.log(fullname, username, email, password);
 
 	// Checking whether data is present or not, if not throwing error
 	if (
@@ -84,4 +107,91 @@ const registerUser = asyncHandler(async (req, res) => {
 		.json(new ApiResponse(200, createdUser, "User registered successfully"));
 });
 
-export { registerUser };
+// writing code for logging user in
+const loginUser = asyncHandler(async (req, res) => {
+	// Getting user input
+	const { username, email, password } = req.body;
+
+	// checking email or username anyone present or not, if not throw error
+	if (!email || !username) {
+		throw new ApiError(400, "Email or Username is required");
+	}
+
+	// checking in database if this username or email present or not
+	const user = await User.findOne({
+		$or: [{ username }, { email }],
+	});
+
+	// throwing error if such user is not present
+	if (!user) {
+		throw new ApiError(404, "User does not exists, Register first");
+	}
+
+	// checking password validation, throwing error if not
+	const isPasswordValid = await user.isPasswordCorrect(password);
+	if (!isPasswordValid) {
+		throw new ApiError(402, "Password is not correct");
+	}
+
+	// calling function for generating and saving access and refresh token
+	const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(
+		user._id
+	);
+
+	// selecting fields to send user without password and refresh token
+	const loggedInUser = await User.findById(user._id).select(
+		"-password -refreshToken"
+	);
+
+	// sending data with cookies to user, we neet to create some options
+	const options = {
+		// below properties are used to secure our cookies, i.e this cookies can not be modified on frontend, it can be modified by server
+		httpOnly: true,
+		secure: true,
+	};
+
+	// sending the response
+	return res
+		.status(200)
+		.cookie("AccessToken", accessToken, options)
+		.cookie("RefreshToken", refreshToken, options)
+		.json(
+			new ApiResponse(
+				200,
+				{
+					user: loggedInUser,
+					accessToken,
+					refreshToken,
+				},
+				"User logged in Successfully"
+			)
+		);
+});
+
+// writing code for logout user in
+const logoutUser = asyncHandler(async (req, res) => {
+	await User.findByIdAndUpdate(
+		req.user._id,
+		{
+			$set: {
+				refreshToken: undefined,
+			},
+		},
+		{
+			new: true,
+		}
+	);
+	const options = {
+		// below properties are used to secure our cookies, i.e this cookies can not be modified on frontend, it can be modified by server
+		httpOnly: true,
+		secure: true,
+	};
+
+	return res
+		.status(200)
+		.clearCookie("accessToken", options)
+		.clearCookie("refreshToken", options)
+		.json(new ApiResponse(200, {}, "User logged out successfully"));
+});
+
+export { registerUser, loginUser, logoutUser };
