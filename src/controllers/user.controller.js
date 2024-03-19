@@ -265,14 +265,16 @@ const changingCurrentPassword = asyncHandler(async (req, res) => {
 	user.password = newPassword;
 	await user.save({ validateBeforeSave: false });
 
-	return res.status(200).json(200, {}, "Password change successfully");
+	return res
+		.status(200)
+		.json(new ApiResponse(200, {}, "Password change successfully"));
 });
 
 // getting current user
 const getCurrentUser = asyncHandler(async (req, res) => {
 	return res
 		.status(200)
-		.json(200, req.user, "Current User Fetched Successfully");
+		.json(new ApiResponse(200, req.user, "Current User Fetched Successfully"));
 });
 
 // updating user account details
