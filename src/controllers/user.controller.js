@@ -285,7 +285,7 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
 		throw new ApiError(400, "All fields are required");
 	}
 	// did same as aboe saed updated user data and also not to get password as abaoe select method
-	const user = User.findByIdAndUpdate(
+	const user = await User.findByIdAndUpdate(
 		req.user?._id,
 		{
 			$set: {
@@ -359,6 +359,82 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
 		.json(new ApiResponse(200, user, "Cover Image updated successfully"));
 });
 
+// getting user's channel profile
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+	// getting username from params : url
+	const { username } = req.params;
+
+	// checking username is present that is params are present or not
+	if (!username?.trim()) {
+		throw new ApiError(400, "Username not found");
+	}
+
+	// writing aggregation pipelines
+	const channel = await User.aggregate([
+		{
+			$match: {
+				// used to match with other
+				username: username?.toLowerCase(),
+			},
+			$lookup: {
+				// lookup to from is model but plural and lowercase, localfield is id that will be matched foreignfield of channels from model and as subscribers will be sent
+				from: "subscriptions",
+				localField: "_id",
+				foreignField: "channel",
+				as: "subscribers",
+			},
+		},
+		{
+			$lookup: {
+				// lookup to from is model but plural and lowercase, localfield is id that will be matched foreignfield of subscriber from model and as subscribedTo will be sent
+				from: "subscriptions",
+				localField: "_id",
+				foreignField: "subscriber",
+				as: "subscribedTo",
+			},
+		},
+		{
+			// getting the above for adding count of subs and subTo
+			$addFields: {
+				subscribersCount: {
+					$size: "$subscribers",
+				},
+				channelsSubscribedToCount: {
+					$size: "$subscribedTo",
+				},
+				isSubscribed: {
+					$cond: {
+						if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+						then: true,
+						else: false,
+					},
+				},
+			},
+		},
+		{
+			$project: {
+				fullname: 1,
+				username: 1,
+				subscribersCount: 1,
+				channelsSubscribedToCount: 1,
+				isSubscribed: 1,
+				avatar: 1,
+				coverImage: 1,
+				email: 1,
+			},
+		},
+	]);
+
+	if (!channel?.length) {
+		throw new ApiError(404, "Channel does not exists");
+	}
+
+	return res
+		.status(200)
+		.json(
+			new ApiResponse(200, channel[0], "User channel fetched successfully")
+		);
+});
 export {
 	registerUser,
 	loginUser,
@@ -369,4 +445,5 @@ export {
 	getCurrentUser,
 	updateUserCoverImage,
 	updateUserAvatar,
+	getUserChannelProfile,
 };
